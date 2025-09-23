@@ -1,0 +1,12 @@
+{
+  "user": "184",
+  "vip_link": "https://www.roblox.com/games/234234/?privateServerLinkCode=xxxxxx",
+  "check_interval_in_game": 15,
+  "check_interval_not_in_game": 30,
+
+  "webhook_url": "https://discord.com/api/webhooks/xxxxxx/xxxxxx",
+  "webhook_message_id_file": "~/msgid.txt",
+  "roproxy": "roproxy.com",
+  "vng_mode": true,
+  "debug": true
+}
