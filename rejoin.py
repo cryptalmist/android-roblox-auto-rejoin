@@ -115,11 +115,12 @@ def kill_roblox(package):
         for pid in pids.split():
             print(f"[INFO] Killing PID {pid}")
             subprocess.run(f"su -c 'kill -15 {pid}'", shell=True)
-            time.sleep(5)
+            time.sleep(8)
             still = subprocess.getoutput(f"su -c 'pidof {package}'").split()
             if pid in still:
                 print("[WARN] Still alive → force kill")
                 subprocess.run(f"su -c 'kill -9 {pid}'", shell=True)
+                time.sleep(8)
     except Exception as e:
         print("[ERROR] Kill failed:", e)
 
