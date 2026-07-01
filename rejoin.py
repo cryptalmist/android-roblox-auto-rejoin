@@ -144,9 +144,9 @@ def join_public(place):
     subprocess.run(["am", "start", "-a", "android.intent.action.VIEW", "-d", uri])
 
 def rejoin():
-    package = get_package_name()
-    kill_roblox(package)
-    time.sleep(8)
+    # package = get_package_name()
+    # kill_roblox(package)
+    # time.sleep(8)
 
     vip = config.get("vip_link", "")
     place = config.get("place_id", "")
