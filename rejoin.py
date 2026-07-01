@@ -132,29 +132,23 @@ def force_stop(cfg):
     time.sleep(2)
 
 def launch(cfg):
-    vip   = cfg.get("vip_link", "").strip()
-    place = cfg.get("place_id", "").strip()
+    vip, place = cfg.get("vip_link","").strip(), cfg.get("place_id","").strip()
 
     if vip:
         m = re.search(r'/games/(\d+)[^?]*\?privateServerLinkCode=([\w-]+)', vip)
-        if not m:
-            log("[ERROR] Invalid vip_link format")
-            return
-        place_id, code = m.groups()
-        uri = f"roblox://placeID={place_id}&LinkCode={code}"
-        log(f"Joining VIP → place {place_id}")
+        if not m: return log("[ERROR] Invalid vip_link format")
+        uri = f"roblox://placeID={m[1]}&LinkCode={m[2]}"
+        log(f"Joining VIP → place {m[1]}")
     elif place:
         uri = f"roblox://placeID={place}"
         log(f"Joining public → place {place}")
     else:
-        log("[ERROR] No place_id or vip_link in config")
-        return
+        return log("[ERROR] No place_id or vip_link in config")
 
     dlog(f"URI: {uri}", cfg)
-    subprocess.run(
-        ["am", "start", "-a", "android.intent.action.VIEW", "-d", uri],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
+    subprocess.run(["am","start","-n","com.roblox.client/com.roblox.client.startup.ActivitySplash"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(10)
+    subprocess.run(["am","start","-a","android.intent.action.VIEW","-d",uri], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def rejoin(cfg):
     force_stop(cfg)
