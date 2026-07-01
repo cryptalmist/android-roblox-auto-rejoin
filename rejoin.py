@@ -14,7 +14,7 @@ except ImportError:
 DEFAULT_CONFIG = {
     "user_id":                      0,
     "cookie":                       "",
-    "place_id":                     "",
+    "place_id":                     0,
     "vip_link":                     "",
     "vng_mode":                     True,
     "offline_checks_before_rejoin": 3,
@@ -132,7 +132,7 @@ def force_stop(cfg):
     time.sleep(2)
 
 def launch(cfg):
-    vip, place = cfg.get("vip_link","").strip(), cfg.get("place_id","").strip()
+    vip, place = cfg.get("vip_link",0), cfg.get("place_id",0)
 
     if vip:
         m = re.search(r'/games/(\d+)[^?]*\?privateServerLinkCode=([\w-]+)', vip)
