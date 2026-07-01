@@ -256,9 +256,6 @@ def main_loop():
 
         in_game, place_id, game_id, location, last_online = is_user_in_game(user, cookie)
 
-        print_status(offline_counter, limit, in_game, place_id, game_id, location, last_online, user_info)
-        send_or_update_webhook(config, in_game, place_id)
-
         if in_game:
             offline_counter = 0
             time.sleep(delay_in + random.uniform(0, 2))
@@ -271,6 +268,9 @@ def main_loop():
                 time.sleep(delay_out + random.uniform(1, 3))
             else:
                 time.sleep(delay_out)
+
+        print_status(offline_counter, limit, in_game, place_id, game_id, location, last_online, user_info)
+        send_or_update_webhook(config, in_game, place_id)
 
 # ── start ───────────────────────────────────────
 if __name__ == "__main__":
