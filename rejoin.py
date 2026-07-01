@@ -1,282 +1,302 @@
 import json, time, re, subprocess, sys, os, datetime, random
 
-# ── auto install requests ───────────────────────
+# ── auto install ────────────────────────────────
 try:
     import requests
 except ImportError:
     subprocess.run([sys.executable, "-m", "pip", "install", "requests"], check=True)
     import requests
 
-# ── default config ──────────────────────────────
+# ───────────────────────────────────────────────
+#  CONFIG
+# ───────────────────────────────────────────────
+
 DEFAULT_CONFIG = {
-    "user": 0,
-    "cookie": "",
-    "vip_link": "",
-    "place_id": "",
-    "vng_mode": True,
-    "debug": False,
-    "clear_logs": True,
+    "user_id":                      0,
+    "cookie":                       "",
+    "place_id":                     "",
+    "vip_link":                     "",
+    "vng_mode":                     True,
     "offline_checks_before_rejoin": 3,
-    "check_interval_in_game": 15,
-    "check_interval_not_in_game": 30,
-    "webhook_url": "",
-    "webhook_message_id_file": "webhook_message_id.txt"
+    "check_interval_in_game":       20,
+    "check_interval_not_in_game":   30,
+    "load_wait":                    35,
+    "webhook_url":                  "",
+    "webhook_message_id_file":      "webhook_msg_id.txt",
+    "debug":                        False,
 }
 
-# ── config ──────────────────────────────────────
+CONFIG_FILE = "config.json"
+
 def load_config():
-    if not os.path.exists("config.json"):
-        print("[INFO] Creating default config.json")
-        with open("config.json", "w") as f:
+    if not os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "w") as f:
             json.dump(DEFAULT_CONFIG, f, indent=4)
-        print("[INFO] Edit config.json then restart.")
-        sys.exit()
-    with open("config.json") as f:
+        print("[INFO] config.json created — fill it in and restart.")
+        sys.exit(0)
+    with open(CONFIG_FILE) as f:
         cfg = json.load(f)
-    # fill in any missing keys from defaults
     for k, v in DEFAULT_CONFIG.items():
         cfg.setdefault(k, v)
     return cfg
 
-config = load_config()
-DEBUG = config.get("debug", False)
+# ───────────────────────────────────────────────
+#  HELPERS
+# ───────────────────────────────────────────────
 
-def dprint(msg):
-    if DEBUG:
-        print("[DEBUG]", msg)
+def log(msg):
+    ts = datetime.datetime.now().strftime("%H:%M:%S")
+    print(f"[{ts}] {msg}")
 
-# ── terminal clear ──────────────────────────────
-def clear_logs():
-    if config.get("clear_logs", True):
-        print("\033[2J\033[H", end="")
+def dlog(msg, cfg):
+    if cfg.get("debug"):
+        print(f"[DEBUG] {msg}")
 
-# ── roblox package ──────────────────────────────
-def get_package_name():
-    return "com.roblox.client.vnggames" if config.get("vng_mode", True) else "com.roblox.client"
+def clear():
+    print("\033[2J\033[H", end="", flush=True)
 
-# ── session ─────────────────────────────────────
+def package(cfg):
+    return "com.roblox.client.vnggames" if cfg.get("vng_mode") else "com.roblox.client"
+
+# ───────────────────────────────────────────────
+#  ROBLOX API
+# ───────────────────────────────────────────────
+
 def make_session(cookie=None):
     s = requests.Session()
     s.headers.update({
-        "User-Agent": "Roblox/WinInet",
+        "User-Agent":   "Roblox/WinInet",
         "Content-Type": "application/json",
-        "Accept": "application/json",
+        "Accept":       "application/json",
     })
     if cookie:
         s.cookies.set(".ROBLOSECURITY", cookie, domain=".roblox.com")
     return s
 
-# ── user info ────────────────────────────────────
-def get_user_info(user_id, cookie=None):
-    session = make_session(cookie)
-    info = {}
+def fetch_user_info(cfg):
+    uid    = cfg.get("user_id")
+    cookie = cfg.get("cookie") or None
+    s      = make_session(cookie)
     try:
-        r = session.get(f"https://users.roblox.com/v1/users/{user_id}", timeout=10)
+        r = s.get(f"https://users.roblox.com/v1/users/{uid}", timeout=10)
         if r.ok:
             d = r.json()
-            info["username"]     = d.get("name", "?")
-            info["display_name"] = d.get("displayName", "?")
+            return {
+                "display_name": d.get("displayName", "?"),
+                "username":     d.get("name", "?"),
+                "user_id":      uid,
+            }
     except Exception as e:
-        dprint(f"User info error: {e}")
-    return info
+        dlog(f"fetch_user_info: {e}", cfg)
+    return {}
 
-# ── presence check ───────────────────────────────
-def is_user_in_game(user_id, cookie=None):
-    session = make_session(cookie)
+def fetch_presence(cfg):
+    uid    = cfg.get("user_id")
+    cookie = cfg.get("cookie") or None
+    s      = make_session(cookie)
     try:
-        r = session.post(
+        r = s.post(
             "https://presence.roblox.com/v1/presence/users",
-            json={"userIds": [int(user_id)]},
-            timeout=10
+            json={"userIds": [int(uid)]},
+            timeout=10,
         )
         r.raise_for_status()
         pres = r.json().get("userPresences", [])
         if pres:
-            p = pres[0]
-            ptype      = p.get("userPresenceType", 0)
-            place_id   = p.get("placeId")
-            game_id    = p.get("gameId")
-            location   = p.get("lastLocation", "")
-            last_online = p.get("lastOnline", "")[:19].replace("T", " ") if p.get("lastOnline") else ""
-            dprint(f"presenceType={ptype} placeId={place_id} gameId={game_id}")
-            return ptype == 2, place_id, game_id, location, last_online
-        return False, None, None, "", ""
+            p     = pres[0]
+            ptype = p.get("userPresenceType", 0)
+            dlog(f"presence={ptype} place={p.get('placeId')} game={p.get('gameId')}", cfg)
+            return {
+                "in_game":     ptype == 2,
+                "ptype":       ptype,
+                "place_id":    p.get("placeId"),
+                "game_id":     p.get("gameId"),
+                "location":    p.get("lastLocation", ""),
+                "last_online": (p.get("lastOnline", "")[:19].replace("T", " ")
+                                if p.get("lastOnline") else ""),
+            }
     except Exception as e:
-        dprint(f"Presence check error: {e}")
-        return False, None, None, "", ""
+        dlog(f"fetch_presence: {e}", cfg)
+    return {"in_game": False, "ptype": 0, "place_id": None,
+            "game_id": None, "location": "", "last_online": ""}
 
-# ── kill roblox ─────────────────────────────────
-def kill_roblox(package):
-    try:
-        pids = subprocess.getoutput(f"su -c 'pidof {package}'").strip()
-        if not pids:
-            print("[INFO] Roblox not running")
-            return
-        for pid in pids.split():
-            print(f"[INFO] Killing PID {pid}")
-            subprocess.run(f"su -c 'kill -15 {pid}'", shell=True)
-            time.sleep(8)
-            still = subprocess.getoutput(f"su -c 'pidof {package}'").split()
-            if pid in still:
-                print("[WARN] Still alive → force kill")
-                subprocess.run(f"su -c 'kill -9 {pid}'", shell=True)
-                time.sleep(8)
-    except Exception as e:
-        print("[ERROR] Kill failed:", e)
+# ───────────────────────────────────────────────
+#  GAME LAUNCH
+# ───────────────────────────────────────────────
 
-# ── vip parsing ─────────────────────────────────
-def extract_placeid_and_pscode(url):
-    match = re.search(r'/games/(\d+)[^?]*\?privateServerLinkCode=([\w-]+)', url)
-    if not match:
-        raise ValueError("Invalid VIP link format")
-    return match.groups()
-
-# ── join ────────────────────────────────────────
-def join_vip(link):
-    place_id, code = extract_placeid_and_pscode(link)
-    uri = f"roblox://placeID={place_id}&LinkCode={code}"
-    dprint(f"Launching: {uri}")
-    subprocess.run(["am", "start", "-a", "android.intent.action.VIEW", "-d", uri])
-
-def join_public(place):
-    uri = f"roblox://placeID={place}"
-    dprint(f"Launching: {uri}")
-    subprocess.run(["am", "start", "-a", "android.intent.action.VIEW", "-d", uri])
-
-def rejoin():
-    package = get_package_name()
-
-    print(f"[INFO] Force stopping {package}")
-    subprocess.run(f"su -c 'am force-stop {package}'", shell=True)
+def force_stop(cfg):
+    pkg = package(cfg)
+    log(f"Force stopping {pkg}")
+    subprocess.run(f"su -c 'am force-stop {pkg}'", shell=True,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(2)
 
-    vip = config.get("vip_link", "")
-    place = config.get("place_id", "")
+def launch(cfg):
+    vip   = cfg.get("vip_link", "").strip()
+    place = cfg.get("place_id", "").strip()
 
     if vip:
-        print("[INFO] Joining VIP server")
-        join_vip(vip)
+        m = re.search(r'/games/(\d+)[^?]*\?privateServerLinkCode=([\w-]+)', vip)
+        if not m:
+            log("[ERROR] Invalid vip_link format")
+            return
+        place_id, code = m.groups()
+        uri = f"roblox://placeID={place_id}&LinkCode={code}"
+        log(f"Joining VIP → place {place_id}")
     elif place:
-        print("[INFO] Joining public server")
-        join_public(place)
+        uri = f"roblox://placeID={place}"
+        log(f"Joining public → place {place}")
     else:
-        print("[ERROR] No vip_link or place_id set in config.json")
-
-# ── webhook ─────────────────────────────────────
-def send_or_update_webhook(cfg, in_game, place_id=None):
-    webhook = cfg.get("webhook_url", "")
-    if not webhook:
+        log("[ERROR] No place_id or vip_link in config")
         return
 
-    file = cfg.get("webhook_message_id_file", "webhook_message_id.txt")
-    last = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    dlog(f"URI: {uri}", cfg)
+    subprocess.run(
+        ["am", "start", "-a", "android.intent.action.VIEW", "-d", uri],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
 
-    desc = f"**User:** {cfg.get('user')}\n**Status:** {'🟢 In Game' if in_game else '🔴 Offline'}"
-    if in_game and place_id:
-        desc += f"\n**Place ID:** {place_id}"
+def rejoin(cfg):
+    force_stop(cfg)
+    launch(cfg)
+    wait = int(cfg.get("load_wait", 35))
+    log(f"Waiting {wait}s for game to load...")
+    time.sleep(wait)
 
-    embed = {
-        "title": "Roblox Auto Rejoin",
+# ───────────────────────────────────────────────
+#  WEBHOOK
+# ───────────────────────────────────────────────
+
+def send_webhook(cfg, presence, user_info):
+    url = cfg.get("webhook_url", "").strip()
+    if not url:
+        return
+
+    id_file  = cfg.get("webhook_message_id_file", "webhook_msg_id.txt")
+    in_game  = presence.get("in_game", False)
+    username = user_info.get("username", str(cfg.get("user_id")))
+    now      = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    desc = (
+        f"**User:** {username}\n"
+        f"**Status:** {'🟢 In Game' if in_game else '🔴 Offline'}"
+    )
+    if in_game and presence.get("location"):
+        desc += f"\n**Location:** {presence['location']}"
+    if in_game and presence.get("place_id"):
+        desc += f"\n**Place ID:** {presence['place_id']}"
+
+    payload = {"embeds": [{
+        "title":       "Roblox Auto Rejoin",
         "description": desc,
-        "color": 0x00FF00 if in_game else 0xFF0000,
-        "footer": {"text": f"Last checked: {last}"}
-    }
+        "color":       0x00FF00 if in_game else 0xFF0000,
+        "footer":      {"text": f"Last checked: {now}"},
+    }]}
 
     try:
-        if os.path.exists(file):
-            with open(file) as f:
+        msg_id = None
+        if os.path.exists(id_file):
+            with open(id_file) as f:
                 msg_id = f.read().strip()
-            r = requests.patch(f"{webhook}/messages/{msg_id}", json={"embeds": [embed]}, timeout=10)
-            if r.status_code not in (200, 204):
-                os.remove(file)
 
-        if not os.path.exists(file):
-            r = requests.post(webhook + "?wait=true", json={"embeds": [embed]}, timeout=10)
-            if r.ok:
-                with open(file, "w") as f:
-                    f.write(r.json()["id"])
+        if msg_id:
+            r = requests.patch(f"{url}/messages/{msg_id}", json=payload, timeout=10)
+            if r.status_code in (200, 204):
+                return
+            os.remove(id_file)
+
+        r = requests.post(url + "?wait=true", json=payload, timeout=10)
+        if r.ok:
+            with open(id_file, "w") as f:
+                f.write(r.json()["id"])
     except Exception as e:
-        dprint(f"Webhook error: {e}")
+        dlog(f"webhook: {e}", cfg)
 
-# ── status display ───────────────────────────────
-def print_status(offline_counter, limit, in_game, place_id, game_id, location, last_online, user_info):
-    clear_logs()
+# ───────────────────────────────────────────────
+#  DISPLAY
+# ───────────────────────────────────────────────
+
+def print_status(cfg, presence, user_info, offline_counter, limit):
+    clear()
+    W   = 42
     now = datetime.datetime.now().strftime("%H:%M:%S")
-    W = 40
+
     print("=" * W)
-    print("       Roblox Auto Rejoin")
+    print("        Roblox Auto Rejoin")
     print("=" * W)
 
-    # account info
     if user_info:
-        print(f"  Display Name : {user_info.get('display_name', '?')}")
-        print(f"  Username     : {user_info.get('username', '?')}")
-        print(f"  User ID      : {config.get('user')}")
+        print(f"  Name     : {user_info.get('display_name', '?')}")
+        print(f"  Username : @{user_info.get('username', '?')}")
+        print(f"  ID       : {user_info.get('user_id', '?')}")
     else:
-        print(f"  User ID      : {config.get('user')}")
+        print(f"  ID       : {cfg.get('user_id')}")
 
     print("-" * W)
 
-    # presence
-    print(f"  Time         : {now}")
-    print(f"  VNG Mode     : {config.get('vng_mode')}")
-    print(f"  Status       : {'🟢 In Game' if in_game else '🔴 Not In Game'}")
+    in_game = presence.get("in_game", False)
+    print(f"  Time     : {now}")
+    print(f"  Status   : {'🟢 In Game' if in_game else '🔴 Not In Game'}")
 
     if in_game:
-        if location:
-            print(f"  Location     : {location}")
-        if place_id:
-            print(f"  Place ID     : {place_id}")
-        if game_id:
-            print(f"  Game ID      : {game_id}")
+        if presence.get("location"):
+            print(f"  Location : {presence['location']}")
+        if presence.get("place_id"):
+            print(f"  Place ID : {presence['place_id']}")
     else:
-        if last_online:
-            print(f"  Last Online  : {last_online}")
-        print(f"  Offline Ctr  : {offline_counter} / {limit}")
+        if presence.get("last_online"):
+            print(f"  Last On  : {presence['last_online']}")
+        print(f"  Offline  : {offline_counter} / {limit}")
 
     print("=" * W)
 
-# ── main loop ───────────────────────────────────
-def main_loop():
-    global config, DEBUG
-    offline_counter = 0
-    user_info = {}
+# ───────────────────────────────────────────────
+#  MAIN
+# ───────────────────────────────────────────────
+
+def main():
+    cfg       = load_config()
+    user_info = fetch_user_info(cfg)
+
+    clear()
+    log("Roblox Auto Rejoin starting...")
+    if user_info:
+        log(f"Account: {user_info['display_name']} (@{user_info['username']})")
+
+    log("Launching game on startup...")
+    rejoin(cfg)
+
+    offline_counter  = 0
+    user_info_ticker = 0
 
     while True:
-        config = load_config()
-        DEBUG = config.get("debug", False)
+        cfg   = load_config()
+        limit = int(cfg.get("offline_checks_before_rejoin", 3))
 
-        user   = str(config.get("user"))
-        cookie = config.get("cookie", "") or None
-        delay_in  = int(config.get("check_interval_in_game", 15))
-        delay_out = int(config.get("check_interval_not_in_game", 30))
-        limit     = int(config.get("offline_checks_before_rejoin", 3))
+        # refresh user info every ~10 min
+        user_info_ticker += 1
+        if user_info_ticker >= 30 or not user_info:
+            user_info        = fetch_user_info(cfg)
+            user_info_ticker = 0
 
-        # refresh user info every ~5 minutes (every 20 ticks at 15s)
-        if not user_info or offline_counter % 20 == 0:
-            user_info = get_user_info(user, cookie)
+        presence = fetch_presence(cfg)
 
-        in_game, place_id, game_id, location, last_online = is_user_in_game(user, cookie)
+        print_status(cfg, presence, user_info, offline_counter, limit)
+        send_webhook(cfg, presence, user_info)
 
-        if in_game:
+        if presence["in_game"]:
             offline_counter = 0
-            time.sleep(delay_in + random.uniform(0, 2))
+            delay = int(cfg.get("check_interval_in_game", 20))
+            time.sleep(delay + random.uniform(0, 3))
         else:
             offline_counter += 1
             if offline_counter >= limit:
-                print(f"[INFO] Offline limit reached ({limit}) → rejoining")
-                rejoin()
+                log(f"Offline {offline_counter}x in a row — rejoining")
+                rejoin(cfg)
                 offline_counter = 0
-                time.sleep(delay_out + random.uniform(1, 3))
             else:
-                time.sleep(delay_out)
+                delay = int(cfg.get("check_interval_not_in_game", 30))
+                time.sleep(delay + random.uniform(0, 2))
 
-        print_status(offline_counter, limit, in_game, place_id, game_id, location, last_online, user_info)
-        send_or_update_webhook(config, in_game, place_id)
-
-# ── start ───────────────────────────────────────
 if __name__ == "__main__":
-    clear_logs()
-    print("[INFO] Starting Roblox Auto Rejoin...")
-    time.sleep(1)
-    main_loop()
+    main()
