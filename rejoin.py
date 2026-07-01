@@ -240,7 +240,7 @@ def print_status(cfg, presence, user_info, offline_counter, limit):
     else:
         if presence.get("last_online"):
             print(f"  Last On  : {presence['last_online']}")
-        print(f"  Offline  : {offline_counter} / {limit}")
+        print(f"  Offline  : {offline_counter+1} / {limit}")
 
     print("=" * W)
 
@@ -257,8 +257,8 @@ def main():
     if user_info:
         log(f"Account: {user_info['display_name']} (@{user_info['username']})")
 
-    log("Launching game on startup...")
-    rejoin(cfg)
+    # log("Launching game on startup...")
+    # rejoin(cfg)
 
     offline_counter  = 0
     user_info_ticker = 0
