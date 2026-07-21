@@ -95,7 +95,7 @@ def launch(cfg):
     dlog(f"URI: {uri}", cfg)
     subprocess.run(["am", "start", "-n", "com.roblox.client/com.roblox.client.startup.ActivitySplash"],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(8)
+    time.sleep(2)
     subprocess.run(["am", "start", "-a", "android.intent.action.VIEW", "-d", uri],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
